@@ -23,7 +23,7 @@ func doQuicksave() tea.Cmd {
 			return quicksaveResult{output: string(out1), err: err}
 		}
 
-		commit := exec.Command("git", "commit", "-am", msg)
+		commit := exec.Command("git", "commit", "-m", msg)
 		out2, err := commit.CombinedOutput()
 		if err != nil {
 			return quicksaveResult{output: string(out2), err: err}
