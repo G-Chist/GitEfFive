@@ -55,7 +55,7 @@ func doQuicksave() tea.Cmd {
 
 func doListSaves() tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("git", "log", "--grep={SAVE", "--format=%h|%as|%s", "--max-count=50")
+		cmd := exec.Command("git", "log", "--format=%h|%as|%s", "--max-count=50")
 		out, err := cmd.Output()
 		if err != nil {
 			return listSavesResult{err: err}
