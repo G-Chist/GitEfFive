@@ -33,12 +33,6 @@ func (m model) Init() tea.Cmd {
 func (m model) View() string {
 	var left strings.Builder
 
-	for _, line := range strings.Split(logo, "\n") {
-		left.WriteString("  ")
-		left.WriteString(line)
-		left.WriteString("\n")
-	}
-	left.WriteString("\n")
 	left.WriteString("  ╔══════════════════════════════╗\n")
 	left.WriteString("  ║  GitEfFive - Save Manager    ║\n")
 	left.WriteString("  ╚══════════════════════════════╝\n")
@@ -49,8 +43,16 @@ func (m model) View() string {
 	left.WriteString(m.status)
 	left.WriteString("\n")
 
+	var logoBanner strings.Builder
+	for _, line := range strings.Split(logo, "\n") {
+		logoBanner.WriteString("  ")
+		logoBanner.WriteString(line)
+		logoBanner.WriteString("\n")
+	}
+
 	if m.width < 80 {
-		return left.String()
+		logoBanner.WriteString("\n")
+		return logoBanner.String() + left.String()
 	}
 
 	rightW := m.width * 35 / 100
@@ -79,14 +81,24 @@ func (m model) View() string {
 			end = len(m.saves)
 		}
 
+		msgW := contentW - 2 - 7 - 2 - 1 - 6
+
 		for i := m.saveOffset; i < end; i++ {
 			s := m.saves[i]
 			msg := shortenMessage(s.Message)
-			line := fmt.Sprintf("%s  %s", s.Hash, msg)
-			maxLine := contentW - 2
-			if len(line) > maxLine {
-				line = line[:maxLine]
+			blocks := strings.Repeat("█", s.Blocks) + strings.Repeat("░", 6-s.Blocks)
+			hash := fmt.Sprintf("%-7.7s", s.Hash)
+
+			if len(msg) > msgW {
+				if msgW > 3 {
+					msg = msg[:msgW-3] + "..."
+				} else {
+					msg = msg[:msgW]
+				}
 			}
+			msg = fmt.Sprintf("%-*s", msgW, msg)
+
+			line := fmt.Sprintf("%s  %s %s", hash, msg, blocks)
 			if i == m.saveCursor {
 				rb.WriteString("▸ ")
 			} else {
@@ -103,7 +115,9 @@ func (m model) View() string {
 		Width(rightW).
 		Render(rb.String())
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, left.String(), rightPanel)
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left.String(), rightPanel)
+	topPanel := lipgloss.NewStyle().Width(m.width).Render(logoBanner.String())
+	return lipgloss.JoinVertical(lipgloss.Top, topPanel, body)
 }
 
 func shortenMessage(msg string) string {
