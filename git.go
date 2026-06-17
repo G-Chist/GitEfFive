@@ -2,6 +2,7 @@ package main
 
 import (
 	"os/exec"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +11,17 @@ import (
 type quicksaveResult struct {
 	output string
 	err    error
+}
+
+type SaveEntry struct {
+	Hash    string
+	Date    string
+	Message string
+}
+
+type listSavesResult struct {
+	saves []SaveEntry
+	err   error
 }
 
 func doQuicksave() tea.Cmd {
@@ -38,5 +50,32 @@ func doQuicksave() tea.Cmd {
 		return quicksaveResult{
 			output: string(out1) + string(out2) + string(out3),
 		}
+	}
+}
+
+func doListSaves() tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("git", "log", "--grep={SAVE", "--format=%h|%as|%s", "--max-count=50")
+		out, err := cmd.Output()
+		if err != nil {
+			return listSavesResult{err: err}
+		}
+		s := strings.TrimSpace(string(out))
+		if s == "" {
+			return listSavesResult{saves: []SaveEntry{}}
+		}
+		lines := strings.Split(s, "\n")
+		saves := make([]SaveEntry, 0, len(lines))
+		for _, line := range lines {
+			parts := strings.SplitN(line, "|", 3)
+			if len(parts) == 3 {
+				saves = append(saves, SaveEntry{
+					Hash:    parts[0],
+					Date:    parts[1],
+					Message: parts[2],
+				})
+			}
+		}
+		return listSavesResult{saves: saves}
 	}
 }
