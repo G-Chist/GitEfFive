@@ -317,7 +317,7 @@ func (m model) View() string {
 		if st.LinesAdded > 0 || st.LinesDeleted > 0 {
 			parts = append(parts, fmt.Sprintf("lines: +%d -%d", st.LinesAdded, st.LinesDeleted))
 		}
-		statusBar = "  " + strings.Join(parts, "  │  ")
+		statusBar = " " + strings.Join(parts, "\n ")
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Top, logoBanner.String(), "", statusLine, "", body, "", statusBar, "", footer)
