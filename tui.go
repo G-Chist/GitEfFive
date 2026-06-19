@@ -15,9 +15,10 @@ const (
 	narrowThreshold = 80
 
 	// saves panel: width = terminal × pct / 100, clamped to [min, max]
-	savesPanelPct   = 28
-	savesPanelMin   = 28
-	savesPanelMax   = 48
+	savesPanelPct         = 28
+	savesPanelPctHeight   = 48
+	savesPanelMin         = 28
+	savesPanelMax         = 48
 	// players panel: width = terminal × pct / 100, clamped to [min, max]
 	playersPanelPct = 22
 	playersPanelMin = 20
@@ -119,6 +120,7 @@ func (m model) View() string {
 
 	// Saves panel
 	savesW := m.width * savesPanelPct / 100
+	savesH := m.height * savesPanelPctHeight / 100
 	if savesW < savesPanelMin {
 		savesW = savesPanelMin
 	}
@@ -134,7 +136,7 @@ func (m model) View() string {
 	if len(m.saves) == 0 {
 		rb.WriteString("No saves yet\n")
 	} else {
-		maxVisible := m.height - reservedLines
+		maxVisible := savesH - reservedLines
 		if maxVisible < minVisible {
 			maxVisible = minVisible
 		}
@@ -173,6 +175,7 @@ func (m model) View() string {
 	}
 
 	savesPanel := lipgloss.NewStyle().
+		MaxHeight(savesH).
 		Border(lipgloss.RoundedBorder()).
 		Padding(0, 1).
 		Width(savesW).
@@ -491,7 +494,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // This is called on every cursor movement (up/down in Update).
 // It takes a pointer receiver (*model) because it mutates m.saveOffset.
 func (m *model) adjustSaveOffset() {
-	maxVisible := m.height - reservedLines
+	savesH := m.height * savesPanelPctHeight / 100
+	maxVisible := savesH - reservedLines
+
 	if maxVisible < minVisible {
 		maxVisible = minVisible
 	}
