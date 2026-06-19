@@ -439,7 +439,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "Quickload complete!"
 		}
-		return m, nil
+		// After a load, refresh panels and status.
+		return m, tea.Batch(doListSaves(), doListBranches(), doRepoStatus())
+
 
 	case listSavesResult:
 		m.saves = msg.saves
