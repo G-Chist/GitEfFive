@@ -68,6 +68,7 @@ type model struct {
 	branches         []BranchEntry
 	branchesCursor   int
 	branchesOffset   int
+	repoStatus       RepoStatus
 	focused          int
 	width          int
 	height         int
@@ -84,7 +85,7 @@ func initialModel() model {
 // result back as a message. If you don't need to do anything on startup,
 // return nil.
 func (m model) Init() tea.Cmd {
-	return tea.Batch(doListSaves(), doListPlayers(), doListBranches())
+	return tea.Batch(doListSaves(), doListPlayers(), doListBranches(), doRepoStatus())
 }
 
 func (m model) View() string {
@@ -290,7 +291,36 @@ func (m model) View() string {
 		Render(bb.String())
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, savesPanel, playersPanel, branchesPanel)
-	return lipgloss.JoinVertical(lipgloss.Top, logoBanner.String(), "", statusLine, "", body, "", footer)
+
+	// Git status bar
+	st := m.repoStatus
+	var statusBar string
+	if st.Branch != "" {
+		var parts []string
+		parts = append(parts, fmt.Sprintf("branch: %s", st.Branch))
+		if st.Modified > 0 || st.Added > 0 || st.Deleted > 0 || st.Untracked > 0 {
+			var fileParts []string
+			if st.Modified > 0 {
+				fileParts = append(fileParts, fmt.Sprintf("%d modified", st.Modified))
+			}
+			if st.Added > 0 {
+				fileParts = append(fileParts, fmt.Sprintf("%d added", st.Added))
+			}
+			if st.Deleted > 0 {
+				fileParts = append(fileParts, fmt.Sprintf("%d deleted", st.Deleted))
+			}
+			if st.Untracked > 0 {
+				fileParts = append(fileParts, fmt.Sprintf("%d untracked", st.Untracked))
+			}
+			parts = append(parts, "files: "+strings.Join(fileParts, ", "))
+		}
+		if st.LinesAdded > 0 || st.LinesDeleted > 0 {
+			parts = append(parts, fmt.Sprintf("lines: +%d -%d", st.LinesAdded, st.LinesDeleted))
+		}
+		statusBar = "  " + strings.Join(parts, "  │  ")
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Top, logoBanner.String(), "", statusLine, "", body, "", statusBar, "", footer)
 }
 
 // shortenMessage truncates commit messages for display. SAVE commits
@@ -378,6 +408,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focused++
 			}
 			return m, nil
+		case "r":
+			if !m.running {
+				m.running = true
+				m.status = "Running quickload..."
+				return m, doQuickload()
+			}
 		case "s":
 			if !m.running {
 				m.running = true
@@ -393,8 +429,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "Quicksave complete!"
 		}
-		// After a save, refresh the commit list and branches.
-		return m, tea.Batch(doListSaves(), doListBranches())
+		// After a save, refresh panels and status.
+		return m, tea.Batch(doListSaves(), doListBranches(), doRepoStatus())
+
+	case quickloadResult:
+		m.running = false
+		if msg.err != nil {
+			m.status = fmt.Sprintf("Error: %s", strings.TrimSpace(msg.err.Error()))
+		} else {
+			m.status = "Quickload complete!"
+		}
+		return m, nil
 
 	case listSavesResult:
 		m.saves = msg.saves
@@ -421,6 +466,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.branchesCursor = i
 				break
 			}
+		}
+		return m, nil
+
+	case repoStatusResult:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("Error: %s", msg.err.Error())
+		} else {
+			m.repoStatus = msg.status
 		}
 		return m, nil
 	}

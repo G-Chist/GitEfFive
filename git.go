@@ -23,6 +23,11 @@ type quicksaveResult struct {
 	err    error
 }
 
+type quickloadResult struct {
+	output string
+	err    error
+}
+
 // SaveEntry holds parsed data for one git commit loaded from git log.
 // tea.Msg types can be any Go struct
 type SaveEntry struct {
@@ -59,6 +64,91 @@ type BranchEntry struct {
 type listBranchesResult struct {
 	branches []BranchEntry
 	err      error
+}
+
+type RepoStatus struct {
+	Branch      string
+	Modified    int
+	Added       int
+	Deleted     int
+	Untracked   int
+	LinesAdded  int
+	LinesDeleted int
+}
+
+type repoStatusResult struct {
+	status RepoStatus
+	err    error
+}
+
+func doRepoStatus() tea.Cmd {
+	return func() tea.Msg {
+		// get current branch
+		branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+		branchOut, err := branchCmd.Output()
+		if err != nil {
+			return repoStatusResult{err: err}
+		}
+		branch := strings.TrimSpace(string(branchOut))
+
+		// count files by status
+		statusCmd := exec.Command("git", "status", "--porcelain")
+		statusOut, err := statusCmd.Output()
+		if err != nil {
+			return repoStatusResult{err: err}
+		}
+		var modified, added, deleted, untracked int
+		for _, line := range strings.Split(string(statusOut), "\n") {
+			if len(line) < 2 {
+				continue
+			}
+			idx := line[0]
+			wt := line[1]
+			if line[:2] == "??" {
+				untracked++
+			} else {
+				if idx == 'M' || wt == 'M' {
+					modified++
+				}
+				if idx == 'A' || wt == 'A' {
+					added++
+				}
+				if idx == 'D' || wt == 'D' {
+					deleted++
+				}
+			}
+		}
+
+		// count lines added/deleted in working tree
+		diffCmd := exec.Command("git", "diff", "--numstat")
+		diffOut, err := diffCmd.Output()
+		var linesAdded, linesDeleted int
+		if err == nil {
+			for _, line := range strings.Split(string(diffOut), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					if n, err := strconv.Atoi(fields[0]); err == nil {
+						linesAdded += n
+					}
+					if n, err := strconv.Atoi(fields[1]); err == nil {
+						linesDeleted += n
+					}
+				}
+			}
+		}
+
+		return repoStatusResult{
+			status: RepoStatus{
+				Branch:       branch,
+				Modified:     modified,
+				Added:        added,
+				Deleted:      deleted,
+				Untracked:    untracked,
+				LinesAdded:   linesAdded,
+				LinesDeleted: linesDeleted,
+			},
+		}
+	}
 }
 
 func doListBranches() tea.Cmd {
@@ -172,6 +262,14 @@ func doQuicksave() tea.Cmd {
 		return quicksaveResult{
 			output: string(out1) + string(out2) + string(out3),
 		}
+	}
+}
+
+func doQuickload() tea.Cmd {
+	return func() tea.Msg {
+		stash := exec.Command("git", "stash")
+		out, err := stash.CombinedOutput()
+		return quickloadResult{output: string(out), err: err}
 	}
 }
 
