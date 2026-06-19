@@ -110,7 +110,7 @@ func (m model) View() string {
 	footer := lipgloss.NewStyle().
 		Width(w).
 		Align(lipgloss.Center).
-		Render("[s] quicksave [l] load [r] quickload [q] quit")
+		Render("[s] quicksave [l] load [r] quickload [q] quit\nNOT EVERYTHING WORKS YET!")
 
 	if m.width < narrowThreshold {
 		logoBanner.WriteString("\n")
