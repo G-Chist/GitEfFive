@@ -285,7 +285,7 @@ func doListSaves() tea.Cmd {
 		// --format=%h|%as|%s gives "abc1234|2026-06-17|commit message"
 		// --numstat follows each commit header with "N\tN\tfilename" lines
 		// --max-count=50 limits to the 50 most recent commits
-		cmd := exec.Command("git", "log", "--numstat", "--format=%h|%as|%s", "--max-count=50")
+		cmd := exec.Command("git", "log", "--numstat", "--format=%h|%as|%s")
 		out, err := cmd.Output()
 		if err != nil {
 			return listSavesResult{err: err}
