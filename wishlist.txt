@@ -5,5 +5,8 @@
 - load feature (based on each commit)
 - save log
 - flatten all saves to one
+- switch branches
+- delete save (delete commit)
+- tests
 - override commands for quicksave, quickload, save, load, etc.
 - works out of whichever directory it is called in similar to ncdu (installed globally)

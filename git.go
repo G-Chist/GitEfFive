@@ -2,33 +2,145 @@ package main
 
 import (
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	// "tea" is the standard alias for Bubble Tea, the TUI framework.
+	// Key types:
+	//   tea.Model  is an interface { Init() tea.Cmd; Update(tea.Msg) (tea.Model, tea.Cmd); View() string }
+	//   tea.Cmd    is a function that does async work and returns a tea.Msg  ("command" in Elm terms)
+	//   tea.Msg    is any value passed through Update to trigger state changes ("message" in Elm terms)
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// quicksaveResult is a custom tea.Msg type. When doQuicksave() finishes
+// running the git commands, it sends this message back to the Update loop.
+// The Update method (in tui.go) matches on this type to update the UI state.
 type quicksaveResult struct {
 	output string
 	err    error
 }
 
+// SaveEntry holds parsed data for one git commit loaded from git log.
+// tea.Msg types can be any Go struct
 type SaveEntry struct {
 	Hash    string
 	Date    string
 	Message string
-	Size    int
-	Blocks  int
+	Size    int // total lines added + deleted (from --numstat)
+	Blocks  int // visual bar width proportional to Size
 }
 
+// listSavesResult is another tea.Msg type. doListSaves() sends this back
+// after parsing git log output into a slice of SaveEntry.
 type listSavesResult struct {
 	saves []SaveEntry
 	err   error
 }
 
+type PlayerEntry struct {
+	Name   string
+	Count  int
+	Blocks int
+}
+
+type listPlayersResult struct {
+	players []PlayerEntry
+	err     error
+}
+
+type BranchEntry struct {
+	Name    string
+	Current bool
+}
+
+type listBranchesResult struct {
+	branches []BranchEntry
+	err      error
+}
+
+func doListBranches() tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("git", "branch", "--format=%(refname:short)|%(HEAD)")
+		out, err := cmd.Output()
+		if err != nil {
+			return listBranchesResult{err: err}
+		}
+		s := strings.TrimSpace(string(out))
+		if s == "" {
+			return listBranchesResult{}
+		}
+		lines := strings.Split(s, "\n")
+		branches := make([]BranchEntry, 0, len(lines))
+		for _, line := range lines {
+			parts := strings.SplitN(line, "|", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			branches = append(branches, BranchEntry{
+				Name:    parts[0],
+				Current: parts[1] == "*",
+			})
+		}
+		return listBranchesResult{branches: branches}
+	}
+}
+
+func doListPlayers() tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("git", "log", "--format=%an", "--max-count=50")
+		out, err := cmd.Output()
+		if err != nil {
+			return listPlayersResult{err: err}
+		}
+		s := strings.TrimSpace(string(out))
+		if s == "" {
+			return listPlayersResult{}
+		}
+		lines := strings.Split(s, "\n")
+		counts := make(map[string]int)
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				counts[line]++
+			}
+		}
+		var players []PlayerEntry
+		maxCount := 0
+		for name, c := range counts {
+			if c > maxCount {
+				maxCount = c
+			}
+			players = append(players, PlayerEntry{Name: name, Count: c})
+		}
+		sort.Slice(players, func(i, j int) bool {
+			return players[i].Count > players[j].Count
+		})
+		for i := range players {
+			if maxCount > 0 {
+				players[i].Blocks = 1 + players[i].Count*5/maxCount
+			} else {
+				players[i].Blocks = 1
+			}
+		}
+		return listPlayersResult{players: players}
+	}
+}
+
+// doQuicksave returns a tea.Cmd, a closure that runs async (but not in a
+// goroutine; Bubble Tea runs these synchronously on a separate goroutine for
+// us). When called, it runs "git add .", "git commit", and "git push origin
+// main" sequentially. The result is wrapped in a quicksaveResult message and
+// sent back through the Update loop.
+//
+// tea.Cmd is simply: type Cmd func() Msg
+// Any function that matches that signature can be returned from Update or Init
+// to trigger side effects. The returned Msg is then fed back into Update.
 func doQuicksave() tea.Cmd {
 	return func() tea.Msg {
+		// Go time formatting uses the reference time Mon Jan 2 15:04:05 MST 2006.
 		now := time.Now().Format("2006-01-02-15-04-05")
 		msg := "{SAVE " + now + "}"
 
@@ -44,7 +156,14 @@ func doQuicksave() tea.Cmd {
 			return quicksaveResult{output: string(out2), err: err}
 		}
 
-		push := exec.Command("git", "push", "origin", "main")
+		branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+		branchOut, err := branchCmd.Output()
+		if err != nil {
+			return quicksaveResult{err: err}
+		}
+		branch := strings.TrimSpace(string(branchOut))
+
+		push := exec.Command("git", "push", "origin", branch)
 		out3, err := push.CombinedOutput()
 		if err != nil {
 			return quicksaveResult{output: string(out3), err: err}
@@ -56,8 +175,18 @@ func doQuicksave() tea.Cmd {
 	}
 }
 
+// doListSaves returns a tea.Cmd that runs "git log --numstat --max-count=50".
+// The output format includes the abbreviated hash, date, and subject on one
+// line, followed by lines of "added deleted filename" (the --numstat data)
+// for each commit.
+//
+// The function parses this into []SaveEntry and wraps it in a listSavesResult
+// message. The View method then renders the list.
 func doListSaves() tea.Cmd {
 	return func() tea.Msg {
+		// --format=%h|%as|%s gives "abc1234|2026-06-17|commit message"
+		// --numstat follows each commit header with "N\tN\tfilename" lines
+		// --max-count=50 limits to the 50 most recent commits
 		cmd := exec.Command("git", "log", "--numstat", "--format=%h|%as|%s", "--max-count=50")
 		out, err := cmd.Output()
 		if err != nil {
@@ -78,6 +207,8 @@ func doListSaves() tea.Cmd {
 				continue
 			}
 
+			// Detect a commit header by splitting on "|" and checking if the
+			// first field looks like a git hash (hex string 7-12 chars).
 			parts := strings.SplitN(line, "|", 3)
 			if len(parts) == 3 && looksLikeHash(parts[0]) {
 				e := SaveEntry{
@@ -86,6 +217,8 @@ func doListSaves() tea.Cmd {
 					Message: parts[2],
 				}
 
+				// Consume subsequent --numstat lines (e.g. "3\t2\tmain.go")
+				// that belong to this commit, summing added+deleted lines as Size.
 				for i+1 < len(lines) {
 					next := strings.TrimSpace(lines[i+1])
 					if next == "" {
@@ -117,6 +250,8 @@ func doListSaves() tea.Cmd {
 			}
 		}
 
+		// Normalise Size to a Blocks value 1-6 for the visual bar in the UI.
+		// The largest commit gets 6 blocks; others scale proportionally.
 		for i := range saves {
 			if maxSize > 0 {
 				saves[i].Blocks = 1 + saves[i].Size*5/maxSize
@@ -132,6 +267,9 @@ func doListSaves() tea.Cmd {
 	}
 }
 
+// looksLikeHash checks if s looks like an abbreviated git commit hash,
+// i.e. a hex string between 7 and 12 characters. Used to distinguish
+// commit-header lines from --numstat lines in the git log output.
 func looksLikeHash(s string) bool {
 	if len(s) < 7 || len(s) > 12 {
 		return false
@@ -148,6 +286,9 @@ func looksLikeHash(s string) bool {
 	return true
 }
 
+// isNumstatField checks whether a string is either "-" or a non-negative
+// integer. Git's --numstat uses "-" for binary files and digits for text
+// files. This helps us distinguish numstat data lines from other output.
 func isNumstatField(s string) bool {
 	if s == "-" {
 		return true
