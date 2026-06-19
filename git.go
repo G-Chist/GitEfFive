@@ -23,6 +23,11 @@ type quicksaveResult struct {
 	err    error
 }
 
+type saveResult struct {
+	output string
+	err    error
+}
+
 type quickloadResult struct {
 	output string
 	err    error
@@ -67,12 +72,12 @@ type listBranchesResult struct {
 }
 
 type RepoStatus struct {
-	Branch      string
-	Modified    int
-	Added       int
-	Deleted     int
-	Untracked   int
-	LinesAdded  int
+	Branch       string
+	Modified     int
+	Added        int
+	Deleted      int
+	Untracked    int
+	LinesAdded   int
 	LinesDeleted int
 }
 
@@ -232,7 +237,7 @@ func doQuicksave() tea.Cmd {
 	return func() tea.Msg {
 		// Go time formatting uses the reference time Mon Jan 2 15:04:05 MST 2006.
 		now := time.Now().Format("2006-01-02-15-04-05")
-		msg := "{SAVE " + now + "}"
+		msg := "qSAVE-" + now
 
 		add := exec.Command("git", "add", ".")
 		out1, err := add.CombinedOutput()
@@ -240,7 +245,7 @@ func doQuicksave() tea.Cmd {
 			return quicksaveResult{output: string(out1), err: err}
 		}
 
-		commit := exec.Command("git", "commit", "-m", msg)
+		commit := exec.Command("git", "commit", "--allow-empty", "-m", msg)
 		out2, err := commit.CombinedOutput()
 		if err != nil {
 			return quicksaveResult{output: string(out2), err: err}
@@ -261,6 +266,49 @@ func doQuicksave() tea.Cmd {
 
 		return quicksaveResult{
 			output: string(out1) + string(out2) + string(out3),
+		}
+	}
+}
+
+func doSave() tea.Cmd {
+	return func() tea.Msg {
+		// Go time formatting uses the reference time Mon Jan 2 15:04:05 MST 2006.
+		now := time.Now().Format("2006-01-02-15-04-05")
+		msg := "SAVE-" + now
+
+		switch_branch := exec.Command("git", "checkout", "-b", msg)
+		out0, err := switch_branch.CombinedOutput()
+		if err != nil {
+			return saveResult{output: string(out0), err: err}
+		}
+
+		add := exec.Command("git", "add", ".")
+		out1, err := add.CombinedOutput()
+		if err != nil {
+			return saveResult{output: string(out1), err: err}
+		}
+
+		commit := exec.Command("git", "commit", "--allow-empty", "-m", msg)
+		out2, err := commit.CombinedOutput()
+		if err != nil {
+			return saveResult{output: string(out2), err: err}
+		}
+
+		branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+		branchOut, err := branchCmd.Output()
+		if err != nil {
+			return saveResult{err: err}
+		}
+		branch := strings.TrimSpace(string(branchOut))
+
+		push := exec.Command("git", "push", "origin", branch)
+		out3, err := push.CombinedOutput()
+		if err != nil {
+			return saveResult{output: string(out3), err: err}
+		}
+
+		return saveResult{
+			output: string(out0) + string(out1) + string(out2) + string(out3),
 		}
 	}
 }

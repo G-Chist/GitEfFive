@@ -1,6 +1,6 @@
 - [x] bubbles TUI
 - [x] quicksave feature (based on git add . && git commit -am "{SAVE YYYY-MM-DD-HH-MM-SS}" && git push origin main)
-- quickload feature (based on git stash)
+- [x] quickload feature (based on git stash)
 - save feature (based on git checkout -b {SAVE_N})
 - load feature (based on each commit)
 - save log

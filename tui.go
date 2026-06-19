@@ -10,15 +10,15 @@ import (
 
 const (
 	// minimum terminal width before the layout collapses to single-column
-	minWidth        = 40
+	minWidth = 40
 	// threshold below which only the logo+status+footer (no panels) are shown
 	narrowThreshold = 80
 
 	// saves panel: width = terminal × pct / 100, clamped to [min, max]
-	savesPanelPct         = 28
-	savesPanelPctHeight   = 48
-	savesPanelMin         = 28
-	savesPanelMax         = 48
+	savesPanelPct       = 28
+	savesPanelPctHeight = 48
+	savesPanelMin       = 28
+	savesPanelMax       = 48
 	// players panel: width = terminal × pct / 100, clamped to [min, max]
 	playersPanelPct = 22
 	playersPanelMin = 20
@@ -28,22 +28,22 @@ const (
 	branchesPanelMin = 24
 	branchesPanelMax = 40
 
-	borderPadding  = 4  // total horizontal padding consumed by the lipgloss border (2 per side × 2)
-	reservedLines  = 5  // lines reserved for header+footer in each panel's visible area
-	minVisible     = 1  // at least one row must be visible regardless of terminal height
-	dateWidth      = 10 // printed width of the YYYY-MM-DD date column in the saves panel
-	blocksWidth    = 6  // width of the visual progress-bar column in both panels
-	countWidth     = 2  // printed width of the numeric counter in the players panel
-	cursorWidth    = 2  // width of the cursor indicator ("▸ " or "  ") prepended to each row
-	ellipsisLen    = 3  // length of the "..." truncation marker
+	borderPadding = 4  // total horizontal padding consumed by the lipgloss border (2 per side × 2)
+	reservedLines = 5  // lines reserved for header+footer in each panel's visible area
+	minVisible    = 1  // at least one row must be visible regardless of terminal height
+	dateWidth     = 10 // printed width of the YYYY-MM-DD date column in the saves panel
+	blocksWidth   = 6  // width of the visual progress-bar column in both panels
+	countWidth    = 2  // printed width of the numeric counter in the players panel
+	cursorWidth   = 2  // width of the cursor indicator ("▸ " or "  ") prepended to each row
+	ellipsisLen   = 3  // length of the "..." truncation marker
 
 	// messages starting with "{SAVE " and at least this long get special truncation
 	saveMsgTrunc = 17 // prefix length kept for SAVE messages (including the trailing "}")
 	saveMsgLen   = 24 // minimum total length to qualify as a SAVE commit message
 	maxMsgLen    = 20 // generic messages longer than this are truncated to saveMsgTrunc + "..."
 
-	focusedSaves   = 0 // focused value for the saves panel
-	focusedPlayers = 1 // focused value for the players panel
+	focusedSaves    = 0 // focused value for the saves panel
+	focusedPlayers  = 1 // focused value for the players panel
 	focusedBranches = 2 // focused value for the branches panel
 )
 
@@ -53,24 +53,23 @@ const logo = ` __    ___  ___  ___  ___         ___
 
 // model implements the tea.Model interface. Bubble Tea requires three methods:
 //
-//   Init() tea.Cmd                         called once at startup; may return a command
-//   Update(tea.Msg) (tea.Model, tea.Cmd)   handle messages, mutate state
-//   View() string            		    render the current state to a terminal string
-//
+//	Init() tea.Cmd                         called once at startup; may return a command
+//	Update(tea.Msg) (tea.Model, tea.Cmd)   handle messages, mutate state
+//	View() string            		    render the current state to a terminal string
 type model struct {
 	status         string
 	running        bool
 	saves          []SaveEntry
 	saveCursor     int
 	saveOffset     int
-	players          []PlayerEntry
-	playersCursor    int
-	playersOffset    int
-	branches         []BranchEntry
-	branchesCursor   int
-	branchesOffset   int
-	repoStatus       RepoStatus
-	focused          int
+	players        []PlayerEntry
+	playersCursor  int
+	playersOffset  int
+	branches       []BranchEntry
+	branchesCursor int
+	branchesOffset int
+	repoStatus     RepoStatus
+	focused        int
 	width          int
 	height         int
 }
@@ -111,7 +110,7 @@ func (m model) View() string {
 	footer := lipgloss.NewStyle().
 		Width(w).
 		Align(lipgloss.Center).
-		Render("[s] quicksave [l] load [r] quickload [q] quit\nNOT EVERYTHING WORKS YET!")
+		Render("[s] quicksave [f] save [l] load [r] quickload [q] quit\nNOT EVERYTHING WORKS YET!")
 
 	if m.width < narrowThreshold {
 		logoBanner.WriteString("\n")
@@ -334,7 +333,7 @@ func shortenMessage(msg string) string {
 		return msg[:saveMsgTrunc] + "}"
 	}
 	if len(msg) > maxMsgLen {
-		return msg[:saveMsgTrunc] + "..."
+		return msg[:maxMsgLen-ellipsisLen] + "..."
 	}
 	return msg
 }
@@ -344,10 +343,11 @@ func shortenMessage(msg string) string {
 // a tea.Cmd to perform side effects (git operations, etc.).
 //
 // Type-switching on msg allows handling different message types:
-//   tea.WindowSizeMsg is sent when the terminal is resized
-//   tea.KeyMsg        is sent on key presses
-//   quicksaveResult   is our custom message from doQuicksave()
-//   listSavesResult   is our custom message from doListSaves()
+//
+//	tea.WindowSizeMsg is sent when the terminal is resized
+//	tea.KeyMsg        is sent on key presses
+//	quicksaveResult   is our custom message from doQuicksave()
+//	listSavesResult   is our custom message from doListSaves()
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -417,6 +417,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Running quickload..."
 				return m, doQuickload()
 			}
+		case "f":
+			if !m.running {
+				m.running = true
+				m.status = "Running save..."
+				return m, doSave()
+			}
+
 		case "s":
 			if !m.running {
 				m.running = true
@@ -425,10 +432,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case saveResult:
+		m.running = false
+		if msg.err != nil {
+			m.status = fmt.Sprintf("Error: %s", strings.TrimSpace(msg.output))
+		} else {
+			m.status = "Save complete! New branch created"
+		}
+		// After a save, refresh panels and status.
+		return m, tea.Batch(doListSaves(), doListBranches(), doRepoStatus())
+
 	case quicksaveResult:
 		m.running = false
 		if msg.err != nil {
-			m.status = fmt.Sprintf("Error: %s", strings.TrimSpace(msg.err.Error()))
+			m.status = fmt.Sprintf("Error: %s", strings.TrimSpace(msg.output))
 		} else {
 			m.status = "Quicksave complete!"
 		}
@@ -438,13 +455,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case quickloadResult:
 		m.running = false
 		if msg.err != nil {
-			m.status = fmt.Sprintf("Error: %s", strings.TrimSpace(msg.err.Error()))
+			m.status = fmt.Sprintf("Error: %s", strings.TrimSpace(msg.output))
 		} else {
 			m.status = "Quickload complete!"
 		}
 		// After a load, refresh panels and status.
 		return m, tea.Batch(doListSaves(), doListBranches(), doRepoStatus())
-
 
 	case listSavesResult:
 		m.saves = msg.saves
